@@ -61,3 +61,8 @@ const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
 });
+
+// 安全なヘルスチェック用のランダムURL
+app.get("/healthz-kura014", (_req, res) => {
+  res.status(200).send("ok");
+});
