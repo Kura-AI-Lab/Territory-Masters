@@ -526,8 +526,35 @@ const _pass = pass;
 pass = function(){ _pass(); syncBroadcast(); };
 
 function showEnd(resultText) {
-  // " / " 区切りを改行に
-  const formatted = String(resultText).replace(/\s\/\s/g, "\n");
+  const colorMap = {
+    A: "🟦",
+    B: "🟨",
+    C: "🟩",
+    D: "🟪",
+    E: "🟥",
+    F: "🟫",
+  };
+
+  // "A 20 / B 18 / C 17" → 配列に
+  const parts = resultText.replace("終局: ", "").split("→ 勝者:");
+  const stats = parts[0].split("/").map(s => s.trim()); // ["A 20", "B 18", "C 17"]
+  const winner = parts[1].trim();                        // "A" など
+
+  // 行を色とセットで整形
+  const lines = stats.map(line => {
+    const [p, num] = line.split(" ");
+    return `${colorMap[p] || ""} ${p}  ${num}枚`;
+  });
+
+  const winnerMark = winner.split(",").map(p => `${colorMap[p]} ${p}`).join(" & ");
+
+  const formatted =
+`ゲーム終了
+
+${lines.join("\n")}
+
+🏆 勝者：${winnerMark}`;
+
   document.getElementById("endResult").textContent = formatted;
   document.getElementById("endModal").style.display = "flex";
 }
@@ -548,7 +575,7 @@ document.getElementById('closeEndBtn').addEventListener('click', hideEnd);
   <div style="background:#111827; padding:24px; border-radius:14px; max-width:90%; text-align:center;">
     <h2 style="margin:0 0 12px; font-size:22px;">ゲーム終了</h2>
     <pre id="endResult" style="white-space:pre-wrap; margin-bottom:18px; font-size:16px;"></pre>
-    <button id="closeEndBtn" style="padding:10px 20px; border-radius:10px;">閉じる</button>
+    <button id="closeEndBtn" onclick="hideEnd()" style="padding:10px 20px; border-radius:10px;">閉じる</button> 
   </div>
 </div>
 
