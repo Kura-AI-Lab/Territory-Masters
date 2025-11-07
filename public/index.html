@@ -114,6 +114,10 @@
       </label>
       <span class="stat">手番: <span id="turn">A</span></span>
       <span class="stat">初期スタック: <span id="initStack">-</span></span>
+      <label class="stat">
+  <input type="checkbox" id="isoDouble" />
+  孤立×2
+</label>
     </div>
 
     <!-- ★ 追加：オンライン入室UI（簡易） -->
@@ -169,6 +173,7 @@ const splitSelect = document.getElementById('splitSelect'); // サイドパネ�
 const hudSplit = document.getElementById('hudSplit');       // HUD（モバイル）
 const playersSel = document.getElementById('playersSel');
 const radiusSel = document.getElementById('radiusSel');
+const isoDoubleEl = document.getElementById('isoDouble');  // ← 追加
 
 // 盤ラッパ（ポップオーバー用の相対基準にする）
 const boardWrap = document.querySelector('.boardWrap');
@@ -181,6 +186,7 @@ const DIRS = [ [1,0],[0,1],[-1,1],[-1,0],[0,-1],[1,-1] ]; // axial 6方向
 let RADIUS = 5; // 半径
 let HOLE_PERC = 10; // %
 let PLAYER_COUNT = 3; // 2〜5 の範囲で clamp
+let ISO_DOUBLE = false; // ← 孤立×2モード
 const PLAYERS = ['A','B','C','D','E','F']; // slice(0, n) で利用（JS側で最大5に制限）
 const COLORS = {A:'var(--pA)',B:'var(--pB)',C:'var(--pC)',D:'var(--pD)',E:'var(--pE)',F:'var(--pF)'};
 
@@ -361,6 +367,34 @@ function reachableCellsFrom(id){
   return res;
 }
 
+// セルが孤立している＝周囲6方向がすべて壁(盤外/穴/占有) で、空きがない
+function isIsolatedOwnedCell(id) {
+  const c = state.cells.get(id);
+  if (!c || c.hole || !c.owner) return false;
+  const neigh = neighborIds(c);
+  return neigh.every(nid => {
+    const n = state.cells.get(nid);
+    if (!n) return true;      // 盤外 = 壁
+    if (n.hole) return true;  // 穴 = 壁
+    if (!n.owner) return false; // 空きがある → 孤立ではない
+    return true;              // 占有されている = 壁扱い
+  });
+}
+
+function tallyScores() {
+  const counts = {};
+  state.playersActive.forEach(p => counts[p] = 0);
+
+  for (const id of state.order) {
+    const c = state.cells.get(id);
+    if (!c || c.hole || !c.owner) continue;
+    const base = 1;
+    const bonus = (ISO_DOUBLE && isIsolatedOwnedCell(id)) ? 1 : 0; // 孤立なら 1点ボーナス（=合計2点）
+    counts[c.owner] += (base + bonus);
+  }
+  return counts;
+}
+
 function showPaths(id){
   const ids = reachableCellsFrom(id);
   for(const cid of ids){ const n = svg.querySelector(`.hex[data-id="${cid}"]`); if(n) n.classList.add('path'); }
@@ -448,13 +482,15 @@ function hasMove(src){
   for(const d of DIRS){ let q=src.q, r=src.r; while(true){ q+=d[0]; r+=d[1]; const c=state.cells.get(k(q,r)); if(!c || c.hole) break; if(c.owner){ break; } return true; } }
   return false;
 }
+
 function resultString(){
-  const counts={}; state.playersActive.forEach(p=> counts[p]=0);
-  for(const id of state.order){ const c=state.cells.get(id); if(c && !c.hole && c.owner) counts[c.owner]++; }
+  const counts = tallyScores();
   const sorted = Object.entries(counts).sort((a,b)=> b[1]-a[1]);
-  const top = sorted[0][1]; const winners = sorted.filter(([_,v])=> v===top).map(([k])=>k).join(',');
+  const top = sorted[0][1];
+  const winners = sorted.filter(([_,v])=> v===top).map(([k])=>k).join(',');
   return `終局: ${sorted.map(([p,v])=>`${p} ${v}`).join(' / ')} → 勝者: ${winners}`;
 }
+
 function endGame(){
   const text = resultString();
   addLog(text);
@@ -582,6 +618,13 @@ radiusSel.addEventListener('change', (e)=>{
 document.getElementById('undoBtn').addEventListener('click', undo);
 document.getElementById('passBtn').addEventListener('click', pass);
 document.getElementById('hudUndo').addEventListener('click', undo);
+if (isoDoubleEl) {
+  isoDoubleEl.addEventListener('change', () => {
+    ISO_DOUBLE = isoDoubleEl.checked;
+    addLog(`孤立×2モード: ${ISO_DOUBLE ? 'ON' : 'OFF'}`);
+    syncBroadcast();
+  });
+}
 document.getElementById('hudPass').addEventListener('click', pass);
 holeRange.addEventListener('input', ()=>{
   HOLE_PERC=parseInt(holeRange.value,10); holePercEl.textContent=HOLE_PERC;
@@ -619,6 +662,7 @@ function serializeState(){
     playersActive: [...state.playersActive],
     order: [...state.order],
     initStack: state.initStack,
+    isoDouble: ISO_DOUBLE,
     cells: state.order.map(id=>{
       const c = state.cells.get(id);
       return { id, q:c.q, r:c.r, hole:c.hole, owner:c.owner, stack:c.stack };
@@ -632,6 +676,8 @@ function adoptServerState(s){
   state.playersActive = [...s.playersActive];
   state.order = [...s.order];
   state.initStack = s.initStack;
+  ISO_DOUBLE = !!s.isoDouble;
+if (isoDoubleEl) isoDoubleEl.checked = ISO_DOUBLE;
   state.selected = null;
 
   state.cells.clear();
