@@ -44,6 +44,23 @@
   .chip{display:inline-flex; gap:6px; align-items:center; background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.08); border-radius:999px; padding:6px 10px; font-weight:700}
   .dot{width:12px; height:12px; border-radius:50%}
   @media (max-width:720px){ h1{font-size:18px} button, select{padding:12px 14px; border-radius:14px} .stat{padding:10px 12px} .log{max-height:30vh}}
+
+  /* ▼ 追加：ターン開始バナー */
+  .turn-banner{
+    position:fixed; inset:0; display:flex; align-items:center; justify-content:center;
+    pointer-events:none; z-index:200;
+    animation: fadeout 1.2s ease-out forwards;
+  }
+  .turn-banner .inner{
+    background:rgba(0,0,0,.65); border:1px solid rgba(255,255,255,.15);
+    padding:18px 24px; border-radius:16px; font-size:28px; font-weight:900;
+    text-shadow:0 2px 12px rgba(0,0,0,.4);
+  }
+  @keyframes fadeout{
+    0%{opacity:1; transform:scale(1)}
+    70%{opacity:1}
+    100%{opacity:0; transform:scale(0.98)}
+  }
 </style>
 </head>
 <body>
@@ -78,6 +95,8 @@
       <input id="roomInput" placeholder="ルームID（例: abc123）" style="padding:10px;border-radius:10px;border:1px solid #fff2" />
       <button id="joinBtn" aria-label="入室">入室</button>
       <span id="roleView" class="muted"></span>
+      <!-- ▼ 追加：人数表示 -->
+      <span id="roomCountView" class="muted"></span>
     </div>
   </header>
 
@@ -135,10 +154,11 @@ const state = {
   phase: 'place',    // 'place' or 'play'
   selected: null,
   history: [],
-  playersActive: [], // 現在生存中のプレイヤー
-  elimOrder: [],     // 脱落順（先に脱落した人から）
-  lastDir: {},     // 直前に進んだ方向 index(0..5) を記録（連続同方向禁止用）
-  sprintCD: {},    // ダッシュ後の1手だけ 2歩禁止（0:なし, 1:次手1歩縛り）
+  playersActive: [],
+  elimOrder: [],
+  // ▼ 変更：方向制限とダッシュ制限は廃止したので保持しない
+  // lastDir: {},
+  // sprintCD: {},
 };
 
 // ---- ユーティリティ ----
@@ -196,13 +216,6 @@ function setupPlayers(n){
   state.elimOrder = [];
   state.turnIdx = 0; state.phase='place'; state.selected=null; state.history=[];
   renderPlayersPanel();
-    // 直前方向＆ダッシュCDを初期化
-  state.lastDir = {};
-  state.sprintCD = {};
-  state.playersActive.forEach(p=>{
-    state.lastDir[p] = null;
-    state.sprintCD[p] = 0;
-  });
 }
 function renderPlayersPanel(){
   playersPanel.innerHTML='';
@@ -230,7 +243,7 @@ function render(){
     }
   }
 
-    // --- 状態とDOMの穴クラスを同期（重要） ---
+  // 状態とDOMの穴クラス同期
   for (const id of state.order) {
     const c = state.cells.get(id);
     const n = svg.querySelector(`.hex[data-id="${id}"]`);
@@ -239,7 +252,6 @@ function render(){
     else n.classList.remove('hole');
   }
 
-
   // ターン表示
   const turnP = state.playersActive[state.turnIdx] || '-';
   turnEl.textContent = turnP;
@@ -247,10 +259,10 @@ function render(){
 
   // アフォーダンス
   for(const id of legalCells()){ const n = svg.querySelector(`.hex[data-id="${id}"]`); if(n) n.classList.add('legal'); }
-    if(state.selected){
+  if(state.selected){
     const n = svg.querySelector(`.hex[data-id="${state.selected}"]`);
     if(n) n.classList.add('sel');
-    for(const cid of reachableCellsFrom(state.selected, turnP)){
+    for(const cid of reachableCellsFrom(state.selected)){
       const nn = svg.querySelector(`.hex[data-id="${cid}"]`);
       if(nn) nn.classList.add('path');
     }
@@ -266,61 +278,53 @@ function legalCells(){
   }else{
     const myCell = state.order.find(id=>{ const c=state.cells.get(id); return c.owner===turnP; });
     if(!myCell) return [];
-    return reachableCellsFrom(myCell, turnP).length>0 ? [myCell] : [];
+    return reachableCellsFrom(myCell).length>0 ? [myCell] : [];
   }
 }
 
-function reachableCellsFrom(id, player){
+// ▼ 変更：方向連続禁止と「2歩後の1歩縛り」を完全撤廃
+function reachableCellsFrom(id){
   const src = state.cells.get(id); if(!src) return [];
   const res = [];
-  const forbidDir = state.lastDir[player];      // 直前と同方向は禁止
-  const cd = state.sprintCD[player] > 0;        // ダッシュ後は2歩禁止
-
   for(let dirIdx=0; dirIdx<DIRS.length; dirIdx++){
-    if(forbidDir === dirIdx) continue;          // 連続同方向NG
     const d = DIRS[dirIdx];
-
     const step1 = state.cells.get(k(src.q + d[0], src.r + d[1]));
     if(step1 && !step1.hole && !step1.owner){
-      res.push(step1.id);                       // 1歩は常に候補
-      if(!cd){                                  // CD中は2歩候補を出さない
-        const step2 = state.cells.get(k(step1.q + d[0], step1.r + d[1]));
-        if(step2 && !step2.hole && !step2.owner){
-          res.push(step2.id);                   // 2歩候補
-        }
+      res.push(step1.id); // 1歩
+      const step2 = state.cells.get(k(step1.q + d[0], step1.r + d[1]));
+      if(step2 && !step2.hole && !step2.owner){
+        res.push(step2.id); // 2歩（中継空き必須）
       }
     }
   }
   return res;
 }
 
-
 function playerHasMove(p){
   const pos = state.order.find(id=>{ const c=state.cells.get(id); return c.owner===p; });
   if(!pos) return false;
-  return reachableCellsFrom(pos, p).length>0;
+  return reachableCellsFrom(pos).length>0;
 }
 
 // ---- ターン進行・脱落判定 ----
 function advanceTurnSkippingDead(){
-  // 次の生存者で、かつ動ける人に回す。全員チェックで連続脱落あり得る。
-  let safety = 20; // 無限ループ保険
+  // 次の生存者で、かつ動ける人に回す
+  let safety = 20;
   while(safety--){
     if(state.playersActive.length<=1){ endGame(); return; }
     state.turnIdx = (state.turnIdx + 1) % state.playersActive.length;
     const p = state.playersActive[state.turnIdx];
     if(playerHasMove(p)) break;
-    // 動けないなら即脱落
     eliminatePlayer(p, '行動不能');
-    // turnIdxは今の位置が消えるので、同じインデックスで次の人を見る
     if(state.playersActive.length<=1){ endGame(); return; }
   }
   render();
+  showTurnBanner(state.playersActive[state.turnIdx]); // ▼ 追加：バナー表示
   syncBroadcast();
 }
 
 function eliminatePlayer(p, reason='脱落'){
-  // 盤上の駒セルも消して穴化（退場）
+  // 駒セルも穴化
   const pos = state.order.find(id=>{ const c=state.cells.get(id); return c.owner===p; });
   if(pos){
     const c = state.cells.get(pos);
@@ -328,12 +332,11 @@ function eliminatePlayer(p, reason='脱落'){
     const node = svg.querySelector(`.hex[data-id="${pos}"]`);
     if(node) node.classList.add('hole');
   }
-  // 脱落リストへ
+  // 脱落リスト
   const idx = state.playersActive.indexOf(p);
   if(idx!==-1){
     state.playersActive.splice(idx,1);
     state.elimOrder.push(p);
-    // ターンポインタ調整（現在インデックスにいた人を削除したので、同インデックスが次の人）
     if(state.turnIdx>=state.playersActive.length){ state.turnIdx = 0; }
     addLog(`${p} 脱落（${reason}）`);
   }
@@ -342,7 +345,7 @@ function eliminatePlayer(p, reason='脱落'){
 function endGame(){
   if(state.playersActive.length===1){
     const winner = state.playersActive[0];
-    const ranking = [winner, ...state.elimOrder.slice().reverse()]; // 生存順
+    const ranking = [winner, ...state.elimOrder.slice().reverse()];
     const text = `終局: 🏆 勝者 ${winner} / 生存順: ${ranking.join(' > ')}`;
     addLog(text);
     showEnd(text);
@@ -361,8 +364,6 @@ function pushHistory(){
     turnIdx: state.turnIdx, phase: state.phase, selected: state.selected,
     playersActive: [...state.playersActive], elimOrder: [...state.elimOrder],
     cells: [...state.order].map(id=>{ const c=state.cells.get(id); return {id, owner:c.owner, hole:c.hole}; }),
-    lastDir: {...state.lastDir},
-    sprintCD: {...state.sprintCD},
   };
   state.history.push(snapshot); if(state.history.length>200) state.history.shift();
 }
@@ -370,8 +371,6 @@ function undo(){
   const s = state.history.pop(); if(!s) return;
   state.turnIdx=s.turnIdx; state.phase=s.phase; state.selected=s.selected;
   state.playersActive=[...s.playersActive]; state.elimOrder=[...s.elimOrder];
-  state.lastDir = {...s.lastDir};
-  state.sprintCD = {...s.sprintCD};
   for(const info of s.cells){ const c=state.cells.get(info.id); if(!c) continue; c.owner=info.owner; c.hole=info.hole; }
   addLog('アンドゥ');
   redrawBoardFromState();
@@ -391,7 +390,11 @@ function onClickCell(id){
     cell.owner = turnP;
     addLog(`${turnP} 初期配置 @ ${fmt(cell)}`);
     if(state.turnIdx < state.playersActive.length-1){ state.turnIdx++; }
-    else { state.turnIdx=0; state.phase='play'; addLog('プレイ開始：1〜2マス直線移動／移動元は穴化／行動不能は即脱落'); }
+    else {
+      state.turnIdx=0; state.phase='play';
+      addLog('プレイ開始：1〜2マス直線移動／移動元は穴化／行動不能は即脱落');
+      showTurnBanner(state.playersActive[state.turnIdx]); // ▼ 追加：開始時にバナー
+    }
     render();
     syncBroadcast();
     return;
@@ -410,44 +413,22 @@ function onClickCell(id){
     state.selected = id; render(); return;
   }
 
-  // 目的地
+  // 目的地へ
   if(state.selected){
-    const turnP = state.playersActive[state.turnIdx];
-    const reach = new Set(reachableCellsFrom(state.selected, turnP));
-        if(reach.has(id)){
+    const reach = new Set(reachableCellsFrom(state.selected));
+    if(reach.has(id)){
       pushHistory();
       const src = state.cells.get(state.selected);
       const dst = state.cells.get(id);
 
-      // 進行方向 index と歩数(1 or 2) を算出
-      let movedDir = null;
-      let steps = 1;
-      for(let dirIdx=0; dirIdx<DIRS.length; dirIdx++){
-        const d = DIRS[dirIdx];
-        if (dst.q === src.q + d[0] && dst.r === src.r + d[1]) { movedDir = dirIdx; steps = 1; break; }
-        if (dst.q === src.q + 2*d[0] && dst.r === src.r + 2*d[1]) { movedDir = dirIdx; steps = 2; break; }
-      }
-
       // 元マスを穴化 → 目的地へ移動
-      // 元マスを穴化 → 目的地へ移動
-src.owner = null;
-src.hole = true;
-// ← これを追加（SVG側にも穴クラスを付与）
-const node = svg.querySelector(`.hex[data-id="${src.id}"]`);
-if (node) node.classList.add('hole');
+      src.owner = null;
+      src.hole = true;
+      const node = svg.querySelector(`.hex[data-id="${src.id}"]`);
+      if (node) node.classList.add('hole');
+      dst.owner = turnP;
 
-dst.owner = turnP;
-
-
-      // 直前方向・ダッシュCDを更新
-      // まず、前回のCDを消費（CD中はこのターン2歩が出てこないため steps=1 のはず）
-      if(state.sprintCD[turnP] > 0) state.sprintCD[turnP] = 0;
-      // 今回2歩なら、次手は1歩縛り（CD付与）
-      if(steps === 2) state.sprintCD[turnP] = 1;
-      // 直前方向を記録（次手の連続方向禁止に使う）
-      state.lastDir[turnP] = movedDir;
-
-      addLog(`${turnP} 移動 ${fmt(src)} → ${fmt(dst)}（${steps}歩${steps===2?'：次手は1歩縛り':''}／同方向連続禁止）`);
+      addLog(`${turnP} 移動 ${fmt(src)} → ${fmt(dst)}`);
 
       state.selected=null;
       advanceTurnSkippingDead();
@@ -462,6 +443,7 @@ document.getElementById('newBtn').addEventListener('click', ()=>{
   setupPlayers(PLAYER_COUNT);
   addLog(`--- New Game --- 初期配置へ`);
   render();
+  showTurnBanner(state.playersActive[state.turnIdx]); // ▼ 追加
   syncBroadcast();
 });
 document.getElementById('regenBtn').addEventListener('click', ()=>{
@@ -469,6 +451,7 @@ document.getElementById('regenBtn').addEventListener('click', ()=>{
   setupPlayers(PLAYER_COUNT);
   addLog(`--- 地形を再生成しました --- 初期配置へ`);
   render();
+  showTurnBanner(state.playersActive[state.turnIdx]); // ▼ 追加
   syncBroadcast();
 });
 playersSel.addEventListener('change', (e)=>{
@@ -481,6 +464,7 @@ radiusSel.addEventListener('change', (e)=>{
   RADIUS = parseInt(e.target.value,10);
   buildBoard(); setupPlayers(PLAYER_COUNT);
   render();
+  showTurnBanner(state.playersActive[state.turnIdx]); // ▼ 追加
   syncBroadcast();
 });
 document.getElementById('undoBtn').addEventListener('click', undo);
@@ -490,6 +474,7 @@ holeRange.addEventListener('input', ()=>{
 
 // 初期セットアップ
 buildBoard(); setupPlayers(PLAYER_COUNT); render(); addLog('初期配置：穴・占有以外ならどこでもOK');
+showTurnBanner('A'); // ▼ 追加：初期表示
 
 // ==================== オンライン同期（Socket.IO） ====================
 const socket = io();
@@ -498,6 +483,30 @@ let ROOM_ID = null;
 const roomInput = document.getElementById('roomInput');
 const joinBtn = document.getElementById('joinBtn');
 const roleView = document.getElementById('roleView');
+const roomCountView = document.getElementById('roomCountView');
+
+// ▼ 追加：入室人数（クライアント表示用）
+let ROOM_SIZE = 1;
+function updateRoomCountView(){
+  if(ROOM_ID){
+    roomCountView.textContent = `人数: ${ROOM_SIZE}`;
+  }else{
+    roomCountView.textContent = '';
+  }
+}
+// ▼ 追加：入室人数に合わせて自動でゲーム人数を切替（2〜5のみ）
+function applyAutoPlayerCountByRoom(){
+  if(ROOM_SIZE>=2 && ROOM_SIZE<=5){
+    if(PLAYER_COUNT !== ROOM_SIZE){
+      PLAYER_COUNT = ROOM_SIZE;
+      playersSel.value = String(PLAYER_COUNT);
+      buildBoard(); setupPlayers(PLAYER_COUNT); render();
+      addLog(`入室人数に合わせてプレイヤー人数を ${PLAYER_COUNT} 人に変更しました`);
+      showTurnBanner(state.playersActive[state.turnIdx]);
+      syncBroadcast();
+    }
+  }
+}
 
 if (joinBtn) {
   joinBtn.addEventListener('click', ()=>{
@@ -506,10 +515,14 @@ if (joinBtn) {
     ROOM_ID = id;
     socket.emit('join', { roomId: ROOM_ID });
     roleView.textContent = `入室中: ${ROOM_ID}`;
+    updateRoomCountView();
+    // サーバに人数照会（対応サーバ想定）。未対応でも問題なし。
+    socket.emit('roomSize', { roomId: ROOM_ID, ask:true });
     syncBroadcast(); // 現状を送る
   });
 }
 
+// 送受信するステート
 function serializeState(){
   return {
     turnIdx: state.turnIdx,
@@ -517,8 +530,6 @@ function serializeState(){
     playersActive: [...state.playersActive],
     elimOrder: [...state.elimOrder],
     order: [...state.order],
-    lastDir: {...state.lastDir},
-    sprintCD: {...state.sprintCD},
     cells: state.order.map(id=>{
       const c = state.cells.get(id);
       return { id, q:c.q, r:c.r, hole:c.hole, owner:c.owner };
@@ -532,8 +543,6 @@ function adoptServerState(s){
   state.playersActive = [...s.playersActive];
   state.elimOrder = [...s.elimOrder];
   state.order = [...s.order];
-  state.lastDir = {...s.lastDir};
-  state.sprintCD = {...s.sprintCD};
   state.selected = null;
 
   state.cells.clear();
@@ -560,6 +569,15 @@ function redrawBoardFromState(){
 socket.on('state', ({ state:serverState })=>{ adoptServerState(serverState); });
 socket.on('end', ({ result }) => { showEnd(result); });
 
+// ▼ 追加：サーバから人数情報を受信（{ roomId, count }）
+socket.on('roomSize', ({ roomId, count })=>{
+  if(ROOM_ID && roomId===ROOM_ID){
+    ROOM_SIZE = Math.max(1, count|0);
+    updateRoomCountView();
+    applyAutoPlayerCountByRoom();
+  }
+});
+
 function syncBroadcast(){
   if(!ROOM_ID) return;
   socket.emit('state', { roomId: ROOM_ID, state: serializeState() });
@@ -581,6 +599,24 @@ function showEnd(resultText) {
 function hideEnd() {
   const modal = document.getElementById("endModal");
   if (modal) modal.style.display = "none";
+}
+
+// ▼ 追加：ターン開始の大きなバナー
+function showTurnBanner(p){
+  if(!p) return;
+  const wrap = document.createElement('div');
+  wrap.className = 'turn-banner';
+  const inner = document.createElement('div');
+  inner.className = 'inner';
+  const color = COLORS[p] || '#fff';
+  inner.style.borderColor = 'rgba(255,255,255,.2)';
+  inner.innerHTML = `<span style="display:inline-flex;gap:10px;align-items:center">
+    <span class="dot" style="background:${color};width:18px;height:18px"></span>
+    <span>（${p} の番です）</span>
+  </span>`;
+  wrap.appendChild(inner);
+  document.body.appendChild(wrap);
+  setTimeout(()=>{ wrap.remove(); }, 1200); // すぐ消える
 }
 </script>
 
