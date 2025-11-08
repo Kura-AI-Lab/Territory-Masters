@@ -348,13 +348,29 @@ function endGame(){
     const ranking = [winner, ...state.elimOrder.slice().reverse()];
     const text = `終局: 🏆 勝者 ${winner} / 生存順: ${ranking.join(' > ')}`;
     addLog(text);
-    showEnd(text);
-    if (ROOM_ID) socket.emit('end', { roomId: ROOM_ID, result: text });
+
+    // ★ 明示情報つきで自分も表示
+    showEnd(text, { winner, survivors:[...state.playersActive], elim:[...state.elimOrder] });
+
+    // ★ サーバへも同じ情報を送る
+    if (ROOM_ID) socket.emit('end', {
+      roomId: ROOM_ID,
+      result: text,
+      winner,
+      survivors: [...state.playersActive],
+      elim: [...state.elimOrder],
+    });
   }else{
     const text = `終局: 全員脱落`;
     addLog(text);
-    showEnd(text);
-    if (ROOM_ID) socket.emit('end', { roomId: ROOM_ID, result: text });
+    showEnd(text, { winner:null, survivors:[], elim:[...state.elimOrder] });
+    if (ROOM_ID) socket.emit('end', {
+      roomId: ROOM_ID,
+      result: text,
+      winner: null,
+      survivors: [],
+      elim: [...state.elimOrder],
+    });
   }
 }
 
@@ -567,8 +583,9 @@ function redrawBoardFromState(){
 }
 
 socket.on('state', ({ state:serverState })=>{ adoptServerState(serverState); });
-socket.on('end', ({ result }) => { showEnd(result); });
-
+socket.on('end', ({ result, winner, survivors, elim }) => {
+  showEnd(result, { winner, survivors, elim });
+});
 // ▼ 追加：サーバから人数情報を受信（{ roomId, count }）
 socket.on('roomSize', ({ roomId, count })=>{
   if(ROOM_ID && roomId===ROOM_ID){
@@ -584,18 +601,33 @@ function syncBroadcast(){
 }
 
 // ========== End Game Modal ==========
-function showEnd(resultText) {
+function showEnd(resultText, extra = {}) {
   const colorMap = {A:"🟦",B:"🟨",C:"🟩",D:"🟪",E:"🟥",F:"🟫"};
+  const { winner = null, survivors = null, elim = null } = extra;
+
   const modal = document.getElementById("endModal");
   const pre = document.getElementById("endResult");
   if (pre) {
-    const survivors = state.playersActive.join(" ");
-    const elim = state.elimOrder.join(" → ");
-    const hero = state.playersActive.length===1 ? `${colorMap[state.playersActive[0]]||''} ${state.playersActive[0]}` : '—';
-    pre.textContent = `${resultText}\n\n【サマリ】\n生存: ${survivors||'なし'}\n脱落順: ${elim||'なし'}\n勝者: ${hero}`;
+    const survivorsText = Array.isArray(survivors) ? survivors.join(" ") :
+                          (state.playersActive.join(" ") || "なし");
+    const elimText = Array.isArray(elim) ? elim.join(" → ") :
+                     (state.elimOrder.join(" → ") || "なし");
+
+    let hero = "—";
+    if (winner) {
+      const icon = colorMap[winner] || "";
+      hero = `${icon} ${winner}`;
+    } else if (state.playersActive.length === 1) {
+      const w = state.playersActive[0];
+      const icon = colorMap[w] || "";
+      hero = `${icon} ${w}`;
+    }
+
+    pre.textContent = `${resultText}\n\n【サマリ】\n生存: ${survivorsText}\n脱落順: ${elimText}\n勝者: ${hero}`;
   }
   if (modal) modal.style.display = "flex";
 }
+
 function hideEnd() {
   const modal = document.getElementById("endModal");
   if (modal) modal.style.display = "none";

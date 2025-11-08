@@ -46,40 +46,35 @@ function broadcastRoomSize(roomId) {
 io.on("connection", (socket) => {
   console.log("✅ ユーザー接続:", socket.id);
 
-  // ルーム参加
   socket.on("join", ({ roomId }) => {
     if (!roomId) return;
     socket.join(roomId);
     console.log(`👥 ${socket.id} がルーム "${roomId}" に参加`);
-    // 参加直後に最新人数を全員へ通知
     broadcastRoomSize(roomId);
   });
 
-  // クライアントからの人数照会（{ roomId }）
+  // 人数照会
   socket.on("roomSize", ({ roomId } = {}) => {
     if (!roomId) return;
     socket.emit("roomSize", { roomId, count: getRoomSize(roomId) });
   });
 
-  // 盤面 state を同じ部屋の「自分以外」へブロードキャスト
+  // 盤面 state の中継
   socket.on("state", ({ roomId, state }) => {
     if (!roomId) return;
     socket.to(roomId).emit("state", { state });
   });
 
-  // 終局結果を中継
-  socket.on("end", ({ roomId, result }) => {
+  // ★ 終局の中継：roomId 以外をそのまま送る（winner/survivors/elim を含む）
+  socket.on("end", (data) => {
+    const { roomId, ...rest } = data || {};
     if (!roomId) return;
-    socket.to(roomId).emit("end", { result });
+    socket.to(roomId).emit("end", rest);
   });
 
-  // 切断前に所属していた全ルームの人数を更新通知
   socket.on("disconnecting", () => {
-    // socket.rooms は Set。最初の要素は socket.id 自身なので除外する
     for (const roomId of socket.rooms) {
       if (roomId === socket.id) continue;
-      // disconnecting 時点ではまだルーム在籍扱いなので、
-      // 次のtickで再計算してから通知
       setTimeout(() => broadcastRoomSize(roomId), 0);
     }
   });
