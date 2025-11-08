@@ -9,7 +9,7 @@
 <script src="/socket.io/socket.io.js"></script>
 
 <style>
-  :root{ --bg:#0f1226; --panel:#121730; --text:#e5e7eb; --muted:#94a3b8; --grid:#1e2447; --ok:#10b981; --warn:#ef4444;
+  :root{ --bg:#0f1226; --panel:#35616a; --text:#e5e7eb; --muted:#94a3b8; --grid:#1e2447; --ok:#10b981; --warn:#ef4444;
          --pA:#60a5fa; --pB:#f59e0b; --pC:#34d399; --pD:#f472b6; --pE:#f87171; --pF:#a78bfa }
   *{box-sizing:border-box}
   html,body{height:100%}
@@ -229,6 +229,17 @@ function render(){
       const circ = createSVG('circle',{cx:x, cy:y, r:20, class:`disc ${c.owner}`}); svg.appendChild(circ);
     }
   }
+
+    // --- 状態とDOMの穴クラスを同期（重要） ---
+  for (const id of state.order) {
+    const c = state.cells.get(id);
+    const n = svg.querySelector(`.hex[data-id="${id}"]`);
+    if (!n) continue;
+    if (c.hole) n.classList.add('hole');
+    else n.classList.remove('hole');
+  }
+
+
   // ターン表示
   const turnP = state.playersActive[state.turnIdx] || '-';
   turnEl.textContent = turnP;
@@ -407,7 +418,6 @@ function onClickCell(id){
       pushHistory();
       const src = state.cells.get(state.selected);
       const dst = state.cells.get(id);
-      const turnP = state.playersActive[state.turnIdx];
 
       // 進行方向 index と歩数(1 or 2) を算出
       let movedDir = null;
@@ -419,9 +429,15 @@ function onClickCell(id){
       }
 
       // 元マスを穴化 → 目的地へ移動
-      src.owner = null;
-      src.hole = true;
-      dst.owner = turnP;
+      // 元マスを穴化 → 目的地へ移動
+src.owner = null;
+src.hole = true;
+// ← これを追加（SVG側にも穴クラスを付与）
+const node = svg.querySelector(`.hex[data-id="${src.id}"]`);
+if (node) node.classList.add('hole');
+
+dst.owner = turnP;
+
 
       // 直前方向・ダッシュCDを更新
       // まず、前回のCDを消費（CD中はこのターン2歩が出てこないため steps=1 のはず）
