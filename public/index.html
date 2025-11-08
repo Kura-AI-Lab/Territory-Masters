@@ -3,9 +3,9 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<title>Territory Masters — 2〜5人 / 六角盤 / ランダム地形 / 任意配置・自由分割 / 終端移動 / モバイル最適化</title>
+<title>Territory Masters — 生存ルール / 1〜2マス移動 / 飛び越え不可 / 終局＝最後の1人</title>
 
-<!-- ★ 追加：Socket.IO クライアント（オンライン同期用） -->
+<!-- Socket.IO（オンライン同期） -->
 <script src="/socket.io/socket.io.js"></script>
 
 <style>
@@ -16,34 +16,25 @@
   body{margin:0; font-family:"Noto Sans JP",system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial; background:
     radial-gradient(1200px 800px at 10% -10%, rgba(99,102,241,.25), transparent 60%),
     radial-gradient(1200px 800px at 110% 0%, rgba(56,189,248,.15), transparent 60%), var(--bg); color:var(--text);
-    display:flex; flex-direction:column; gap:12px; padding:16px; padding-bottom:90px; /* 余白: HUD */}
+    display:flex; flex-direction:column; gap:12px; padding:16px; padding-bottom:24px}
   header{display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap}
   h1{margin:0; font-size:20px}
   .controls{display:flex; gap:8px; flex-wrap:wrap; align-items:center}
-  button, select{background:linear-gradient(180deg,#243065,#1a224f); border:1px solid rgba(255,255,255,.08); color:var(--text); padding:10px 12px; border-radius:12px; font-weight:700}
+  button, select, input{background:linear-gradient(180deg,#243065,#1a224f); border:1px solid rgba(255,255,255,.08); color:var(--text); padding:10px 12px; border-radius:12px; font-weight:700}
   button{cursor:pointer}
   button:hover{filter:brightness(1.06)}
   main{display:grid; grid-template-columns: 1fr 380px; gap:12px}
   @media (max-width:980px){ main{grid-template-columns: 1fr} }
-  .boardWrap{
-  position:relative; /* 追加 */
-  background:var(--panel);
-  border:1px solid rgba(255,255,255,.08);
-  border-radius:14px;
-  padding:10px;
-  display:flex; justify-content:center; align-items:center
-}
+  .boardWrap{position:relative; background:var(--panel); border:1px solid rgba(255,255,255,.08); border-radius:14px; padding:10px; display:flex; justify-content:center; align-items:center}
   svg{width:min(96vw,860px); height:auto; aspect-ratio:1/1; touch-action:manipulation}
   .hex{stroke:#0b102a; stroke-width:1.2; fill:#18304a; transition:filter .15s}
   .hex.dark{fill:#14263d}
-  .hex.border{filter:drop-shadow(0 0 4px rgba(255,255,255,.08))}
   .hex.hole{fill:#0b1030}
   .hex.legal{stroke-dasharray:4 3; stroke:#9ca3af}
   .hex.path{stroke:#6ee7b7}
   .disc{pointer-events:none}
   .A{fill:var(--pA)} .B{fill:var(--pB)} .C{fill:var(--pC)} .D{fill:var(--pD)} .E{fill:var(--pE)} .F{fill:var(--pF)}
   .sel{stroke:#fcd34d; stroke-width:3}
-
   .side{background:var(--panel); border:1px solid rgba(255,255,255,.08); border-radius:14px; padding:12px; display:flex; flex-direction:column; gap:10px}
   .row{display:flex; gap:10px; flex-wrap:wrap; align-items:center}
   .stat{background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.08); border-radius:12px; padding:8px 10px; font-weight:700}
@@ -52,55 +43,22 @@
   .players{display:flex; gap:8px; flex-wrap:wrap}
   .chip{display:inline-flex; gap:6px; align-items:center; background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.08); border-radius:999px; padding:6px 10px; font-weight:700}
   .dot{width:12px; height:12px; border-radius:50%}
-/* 分割ポップオーバー */
-.split-popover{
-  position:absolute;
-  transform:translate(-50%,-100%); /* 中心上に出す */
-  background:rgba(12,16,40,.96);
-  border:1px solid rgba(255,255,255,.12);
-  border-radius:12px;
-  padding:8px 10px;
-  display:none;
-  gap:8px;
-  align-items:center;
-  box-shadow:0 6px 18px rgba(0,0,0,.35);
-  z-index:20;
-  white-space:nowrap;
-}
-.split-popover label{ font-weight:800; margin-right:6px }
-.split-popover select{
-  background:linear-gradient(180deg,#243065,#1a224f);
-  border:1px solid rgba(255,255,255,.12);
-  color:var(--text); padding:8px 10px; border-radius:10px; font-weight:800;
-}
-
-  /* モバイル最適化 */
-  @media (max-width:720px){
-    h1{font-size:18px}
-    button, select{padding:12px 14px; border-radius:14px}
-    .stat{padding:10px 12px}
-    .log{max-height:30vh}
-  }
-  /* 画面下のHUD（スマホ用操作バー） */
-  .hud{position:fixed; left:0; right:0; bottom:0; padding:10px env(safe-area-inset-right) calc(10px + env(safe-area-inset-bottom)) env(safe-area-inset-left); background:rgba(8,10,30,.8); backdrop-filter: blur(8px); border-top:1px solid rgba(255,255,255,.08); display:none; gap:8px; align-items:center; justify-content:center; flex-wrap:wrap; z-index:50}
-  .hud .pill{display:flex; gap:8px; align-items:center; background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.1); padding:10px 12px; border-radius:999px; font-weight:800}
-  .hud button, .hud select{padding:12px 14px; border-radius:14px}
-  @media (max-width:980px){ .hud{display:flex} }
+  @media (max-width:720px){ h1{font-size:18px} button, select{padding:12px 14px; border-radius:14px} .stat{padding:10px 12px} .log{max-height:30vh}}
 </style>
 </head>
 <body>
   <header>
-    <h1>Territory Masters（<span class="muted"> 2〜5人 / 六角盤 / ランダム地形</span>）</h1>
+    <h1>Territory Masters（<span class="muted"> 生存ルール / 1〜2マス移動 / 飛び越え不可</span>）</h1>
     <div class="controls">
       <button id="newBtn" aria-label="ニューゲーム">ニューゲーム</button>
       <button id="regenBtn" aria-label="地形再生成">地形再生成</button>
       <label class="stat">人数
- <select id="playersSel" aria-label="プレイヤー人数">
-  <option value="2">2人</option>
-  <option value="3" selected>3人</option>
-  <option value="4">4人</option>
-  <option value="5">5人</option>
-</select>
+        <select id="playersSel" aria-label="プレイヤー人数">
+          <option value="2">2人</option>
+          <option value="3" selected>3人</option>
+          <option value="4">4人</option>
+          <option value="5">5人</option>
+        </select>
       </label>
       <label class="stat">盤サイズ（半径）
         <select id="radiusSel" aria-label="盤の半径">
@@ -113,14 +71,9 @@
         <input id="holeRange" type="range" min="0" max="30" step="1" value="10" aria-label="穴の割合" />
       </label>
       <span class="stat">手番: <span id="turn">A</span></span>
-      <span class="stat">初期スタック: <span id="initStack">-</span></span>
-      <label class="stat">
-  <input type="checkbox" id="isoDouble" />
-  孤立×2
-</label>
     </div>
 
-    <!-- ★ 追加：オンライン入室UI（簡易） -->
+    <!-- オンライン入室UI -->
     <div class="controls">
       <input id="roomInput" placeholder="ルームID（例: abc123）" style="padding:10px;border-radius:10px;border:1px solid #fff2" />
       <button id="joinBtn" aria-label="入室">入室</button>
@@ -135,102 +88,64 @@
 
     <aside class="side">
       <div class="players" id="playersPanel"></div>
-      <div class="row"><div class="stat">ルール要約：<b>初手は盤上のどこでもOK</b>（穴・占有以外）。初期スタックは<b>有効パネル総数 ÷ プレイ人数</b>（小数切捨て）。手番では自分のスタックを<b>自由に分割(1〜n-1選択)</b>し、<b>一直線に突き当たり（障害直前）まで</b>移動します（途中停止不可）。全員が動けなくなったら終了。最多支配で勝ち。</div></div>
       <div class="row">
-        <div class="stat">分割枚数</div>
-        <select id="splitSelect" aria-label="分割枚数"></select>
+        <div class="stat" style="line-height:1.5">
+          ルール要約：<br>
+          ・初手は盤上のどこでもOK（穴・占有以外）<br>
+          ・手番では自コマを<b>1マス or 2マス</b>の直線移動（2マス時は<b>中継マスも空き必須</b>／<b>敵の飛び越え不可</b>）<br>
+          ・移動後、<b>移動前のマスは消える（穴化）</b><br>
+          ・<b>動けなくなったら即脱落</b>（以後 手番は回ってこない）<br>
+          ・<b>最後の1人になった時点でゲーム終了</b>（生存順＝順位）
+        </div>
       </div>
       <div class="row">
         <button id="undoBtn">アンドゥ</button>
-        <button id="passBtn">パス</button>
       </div>
       <div class="log" id="log"></div>
-      <div class="muted">注: ランダム生成の六角盤＋ランダム穴にしています。</div>
+      <div class="muted">注: ランダム六角盤＋ランダム穴で生成します。</div>
     </aside>
   </main>
 
-  <!-- モバイルHUD（下部固定） -->
-  <div class="hud" role="toolbar" aria-label="モバイル操作バー">
-    <div class="pill">手番: <span id="hudTurn">A</span></div>
-    <div class="pill">分割: <select id="hudSplit"></select></div>
-    <button id="hudUndo">アンドゥ</button>
-    <button id="hudPass">パス</button>
-  </div>
-
 <script>
-// ============== Territory Masters（2〜5人対応 / 近接ポップオーバー分割UI / オンライン同期） ==============
+// ========== 生存ルール版（1〜2マス移動／飛び越え不可／脱落制） ==========
 
 // ---- 要素参照 ----
 const svg = document.getElementById('svg');
 const logEl = document.getElementById('log');
 const turnEl = document.getElementById('turn');
-const hudTurn = document.getElementById('hudTurn');
 const holeRange = document.getElementById('holeRange');
 const holePercEl = document.getElementById('holePerc');
 const playersPanel = document.getElementById('playersPanel');
-const initStackEl = document.getElementById('initStack');
-const splitSelect = document.getElementById('splitSelect'); // サイドパネル
-const hudSplit = document.getElementById('hudSplit');       // HUD（モバイル）
 const playersSel = document.getElementById('playersSel');
 const radiusSel = document.getElementById('radiusSel');
-const isoDoubleEl = document.getElementById('isoDouble');  // ← 追加
-
-// 盤ラッパ（ポップオーバー用の相対基準にする）
 const boardWrap = document.querySelector('.boardWrap');
-if (boardWrap && getComputedStyle(boardWrap).position === 'static') {
-  boardWrap.style.position = 'relative';
-}
 
 // ---- 定数・状態 ----
 const DIRS = [ [1,0],[0,1],[-1,1],[-1,0],[0,-1],[1,-1] ]; // axial 6方向
-let RADIUS = 5; // 半径
-let HOLE_PERC = 10; // %
-let PLAYER_COUNT = 3; // 2〜5 の範囲で clamp
-let ISO_DOUBLE = false; // ← 孤立×2モード
-const PLAYERS = ['A','B','C','D','E','F']; // slice(0, n) で利用（JS側で最大5に制限）
+let RADIUS = 5;
+let HOLE_PERC = 10;
+let PLAYER_COUNT = 3;
+const PLAYERS = ['A','B','C','D','E','F'];
 const COLORS = {A:'var(--pA)',B:'var(--pB)',C:'var(--pC)',D:'var(--pD)',E:'var(--pE)',F:'var(--pF)'};
 
 const state = {
-  cells: new Map(), // key: k(q,r) -> {q,r,id, hole:boolean, owner:null|'A'|'B'|'C'|'D'|'E'|'F', stack:0}
+  cells: new Map(),  // id -> {q,r,id,hole:boolean,owner:null|'A'..}
   order: [],
   turnIdx: 0,
-  phase: 'place', // 'place' or 'play'
+  phase: 'place',    // 'place' or 'play'
   selected: null,
   history: [],
-  left: {},
-  playersActive: [],
-  initStack: 16,
-  playableCount: 0,
+  playersActive: [], // 現在生存中のプレイヤー
+  elimOrder: [],     // 脱落順（先に脱落した人から）
+  lastDir: {},     // 直前に進んだ方向 index(0..5) を記録（連続同方向禁止用）
+  sprintCD: {},    // ダッシュ後の1手だけ 2歩禁止（0:なし, 1:次手1歩縛り）
 };
 
-// ---- 近接分割ポップオーバー（自動生成） ----
-const splitPopover = document.createElement('div');
-splitPopover.id = 'splitPopover';
-splitPopover.className = 'split-popover';
-splitPopover.style.cssText = `
-  position:absolute; transform:translate(-50%,-100%);
-  background:rgba(12,16,40,.96); border:1px solid rgba(255,255,255,.12);
-  border-radius:12px; padding:8px 10px; display:none; gap:8px; align-items:center;
-  box-shadow:0 6px 18px rgba(0,0,0,.35); z-index:20; white-space:nowrap;
-`;
-splitPopover.innerHTML = `
-  <label for="localSplit" style="font-weight:800; margin-right:6px">分割</label>
-  <select id="localSplit" aria-label="分割枚数(近接)" style="
-    background:linear-gradient(180deg,#243065,#1a224f);
-    border:1px solid rgba(255,255,255,.12);
-    color:var(--text); padding:8px 10px; border-radius:10px; font-weight:800;
-  "></select>
-`;
-boardWrap.appendChild(splitPopover);
-const localSplit = splitPopover.querySelector('#localSplit');
-
-// ---- 共通ユーティリティ ----
+// ---- ユーティリティ ----
 function k(q,r){ return q+","+r }
 function addLog(s){ const ts=new Date().toLocaleTimeString([], {hour12:false}); logEl.textContent += `[${ts}] ${s}\n`; logEl.scrollTop=logEl.scrollHeight }
 function fmt(c){ return `(${c.q},${c.r})` }
-function hudIsActive(){ return window.matchMedia('(max-width: 980px)').matches }
 
-// ---- 盤生成 ----
 function genHexCoords(R){
   const coords=[];
   for(let q=-R;q<=R;q++){
@@ -240,9 +155,8 @@ function genHexCoords(R){
   }
   return coords;
 }
-
 function axialToPixel(q,r){
-  const sz = 30; // size（SVGはviewBoxでスケールされるのでOK）
+  const sz = 30;
   const x = sz * (Math.sqrt(3) * (q + r/2)) + 500;
   const y = sz * (3/2 * r) + 500;
   return {x,y};
@@ -252,21 +166,18 @@ function hexPath(cx,cy,rad){
   return `M ${pts.map(p=>p.join(',')).join(' L ')} Z`;
 }
 function createSVG(tag, attrs){ const el=document.createElementNS('http://www.w3.org/2000/svg', tag); for(const kk in attrs) el.setAttribute(kk, attrs[kk]); return el }
-function neighborIds(c){ return DIRS.map(d=> k(c.q+d[0], c.r+d[1])) }
 
+// ---- 盤生成 ----
 function buildBoard(){
   state.cells.clear(); state.order.length=0; svg.innerHTML='';
   const coords = genHexCoords(RADIUS);
-  // ランダム穴
   const holes = new Set();
   for(const [q,r] of coords){ if(Math.random()*100 < HOLE_PERC) holes.add(k(q,r)); }
 
-  // 登録
   for(const [q,r] of coords){
     const id=k(q,r); const hole = holes.has(id);
-    state.cells.set(id,{q,r,id,hole,owner:null,stack:0}); state.order.push(id);
+    state.cells.set(id,{q,r,id,hole,owner:null}); state.order.push(id);
   }
-  // 描画
   for(const id of state.order){
     const c=state.cells.get(id); const {x,y}=axialToPixel(c.q,c.r);
     const path = hexPath(x,y,26);
@@ -275,265 +186,189 @@ function buildBoard(){
     el.dataset.id=id; if(!c.hole) el.addEventListener('click', ()=> onClickCell(id));
     svg.appendChild(el);
   }
-  // プレイ可能セル数
-  state.playableCount = state.order.filter(id=>{ const c=state.cells.get(id); return !c.hole; }).length;
 }
 
-// ---- ゲーム管理 ----
-function clampPlayers(n){
-  // UIが6人のままでも 2〜5 に矯正
-  return Math.min(5, Math.max(2, n|0));
-}
-
+// ---- プレイヤー管理 ----
+function clampPlayers(n){ return Math.min(5, Math.max(2, n|0)); }
 function setupPlayers(n){
   const clamped = clampPlayers(n);
   state.playersActive = PLAYERS.slice(0, clamped);
-  // 初期スタック = 有効パネル総数 / プレイ人数（切り捨て、最低2）
-  state.initStack = Math.max(2, Math.floor(state.playableCount / state.playersActive.length));
-  initStackEl.textContent = state.initStack;
-  state.left = {}; state.playersActive.forEach(p=> state.left[p]=state.initStack);
+  state.elimOrder = [];
   state.turnIdx = 0; state.phase='place'; state.selected=null; state.history=[];
   renderPlayersPanel();
+    // 直前方向＆ダッシュCDを初期化
+  state.lastDir = {};
+  state.sprintCD = {};
+  state.playersActive.forEach(p=>{
+    state.lastDir[p] = null;
+    state.sprintCD[p] = 0;
+  });
 }
-
 function renderPlayersPanel(){
   playersPanel.innerHTML='';
-  for(const p of state.playersActive){
+  for(const p of PLAYERS.slice(0,5)){
+    const active = state.playersActive.includes(p);
     const chip = document.createElement('div'); chip.className='chip';
-    chip.innerHTML = `<span class="dot" style="background:${COLORS[p]}"></span>${p} <span class="muted">支配</span> <b id="own_${p}">0</b>`;
+    chip.style.opacity = active ? 1 : 0.35;
+    chip.innerHTML = `<span class="dot" style="background:${COLORS[p]}"></span>${p} ${active?'':'(脱落)'}`;
     playersPanel.appendChild(chip);
   }
 }
 
-function updateOwnershipStats(){
-  const counts={}; state.playersActive.forEach(p=> counts[p]=0);
-  for(const id of state.order){ const c=state.cells.get(id); if(c.hole) continue; if(c.owner && counts[c.owner]!=null) counts[c.owner]++; }
-  for(const p of state.playersActive){ const el = document.getElementById('own_'+p); if(el) el.textContent = counts[p]||0; }
-}
-
-function resetGame(){
-  state.selected=null; state.history=[];
-  for(const id of state.order){ const c=state.cells.get(id); c.owner=null; c.stack=0; }
-  state.phase='place'; state.turnIdx=0; state.playersActive.forEach(p=> state.left[p]=state.initStack);
-  render(); addLog(`--- New Game --- どこでも初期配置OK（穴・占有以外）。初期スタック=${state.initStack}`);
-  hideSplitPopover();
-  syncBroadcast();
-}
-
+// ---- 描画 ----
 function render(){
-  // セル外観
+  // リセット
   const nodes = [...svg.querySelectorAll('.hex')].filter(n=>n.dataset.id);
   nodes.forEach(n=>{ n.classList.remove('legal','path','sel'); });
-  // 既存ディスク消去
   svg.querySelectorAll('.disc').forEach(n=> n.remove());
 
+  // 駒描画（各プレイヤー1駒）
   for(const id of state.order){
     const c=state.cells.get(id); if(c.hole) continue; const {x,y}=axialToPixel(c.q,c.r);
     if(c.owner){
       const circ = createSVG('circle',{cx:x, cy:y, r:20, class:`disc ${c.owner}`}); svg.appendChild(circ);
-      if(c.stack>1){ const t = createSVG('text',{x:x, y:y+5, 'text-anchor':'middle', 'font-size':'15', fill:'#0b102a', class:'disc'}); t.textContent=c.stack; svg.appendChild(t); }
     }
   }
-  // ステータス
-  const turnP = state.playersActive[state.turnIdx];
-  turnEl.textContent = turnP; hudTurn.textContent = turnP;
-  updateOwnershipStats();
+  // ターン表示
+  const turnP = state.playersActive[state.turnIdx] || '-';
+  turnEl.textContent = turnP;
+  renderPlayersPanel();
 
   // アフォーダンス
-  const legals = legalCells();
-  for(const id of legals){ const n = svg.querySelector(`.hex[data-id="${id}"]`); if(n) n.classList.add('legal'); }
-  if(state.selected){ const n = svg.querySelector(`.hex[data-id="${state.selected}"]`); if(n) n.classList.add('sel'); showPaths(state.selected); }
-}
-
-function legalCells(){
-  const turnP = state.playersActive[state.turnIdx];
-  if(state.phase==='place'){
-    // 盤上どこでも（穴・占有以外）
-    return state.order.filter(id=>{ const c=state.cells.get(id); return !c.hole && !c.owner; });
-  } else {
-    // 動かせる自スタック
-    return state.order.filter(id=>{ const c=state.cells.get(id); return !c.hole && c.owner===turnP && c.stack>1; });
+  for(const id of legalCells()){ const n = svg.querySelector(`.hex[data-id="${id}"]`); if(n) n.classList.add('legal'); }
+    if(state.selected){
+    const n = svg.querySelector(`.hex[data-id="${state.selected}"]`);
+    if(n) n.classList.add('sel');
+    for(const cid of reachableCellsFrom(state.selected, turnP)){
+      const nn = svg.querySelector(`.hex[data-id="${cid}"]`);
+      if(nn) nn.classList.add('path');
+    }
   }
 }
 
-function reachableCellsFrom(id){
-  // 各方向の終端（障害直前の最遠マス）のみ（途中停止不可）
-  const src = state.cells.get(id); const res=[];
-  for(const d of DIRS){
-    let q=src.q, r=src.r; let last=null;
-    while(true){ q+=d[0]; r+=d[1]; const nx = state.cells.get(k(q,r)); if(!nx || nx.hole) break; if(nx.owner){ break; } last=nx; }
-    if(last) res.push(last.id);
+// ---- 手番可能セル / 到達セル ----
+function legalCells(){
+  const turnP = state.playersActive[state.turnIdx];
+  if(!turnP) return [];
+  if(state.phase==='place'){
+    return state.order.filter(id=>{ const c=state.cells.get(id); return !c.hole && !c.owner; });
+  }else{
+    const myCell = state.order.find(id=>{ const c=state.cells.get(id); return c.owner===turnP; });
+    if(!myCell) return [];
+    return reachableCellsFrom(myCell, turnP).length>0 ? [myCell] : [];
+  }
+}
+
+function reachableCellsFrom(id, player){
+  const src = state.cells.get(id); if(!src) return [];
+  const res = [];
+  const forbidDir = state.lastDir[player];      // 直前と同方向は禁止
+  const cd = state.sprintCD[player] > 0;        // ダッシュ後は2歩禁止
+
+  for(let dirIdx=0; dirIdx<DIRS.length; dirIdx++){
+    if(forbidDir === dirIdx) continue;          // 連続同方向NG
+    const d = DIRS[dirIdx];
+
+    const step1 = state.cells.get(k(src.q + d[0], src.r + d[1]));
+    if(step1 && !step1.hole && !step1.owner){
+      res.push(step1.id);                       // 1歩は常に候補
+      if(!cd){                                  // CD中は2歩候補を出さない
+        const step2 = state.cells.get(k(step1.q + d[0], step1.r + d[1]));
+        if(step2 && !step2.hole && !step2.owner){
+          res.push(step2.id);                   // 2歩候補
+        }
+      }
+    }
   }
   return res;
 }
 
-// セルが孤立している＝周囲6方向がすべて壁(盤外/穴/占有) で、空きがない
-function isIsolatedOwnedCell(id) {
-  const c = state.cells.get(id);
-  if (!c || c.hole || !c.owner) return false;
-  const neigh = neighborIds(c);
-  return neigh.every(nid => {
-    const n = state.cells.get(nid);
-    if (!n) return true;      // 盤外 = 壁
-    if (n.hole) return true;  // 穴 = 壁
-    if (!n.owner) return false; // 空きがある → 孤立ではない
-    return true;              // 占有されている = 壁扱い
-  });
+
+function playerHasMove(p){
+  const pos = state.order.find(id=>{ const c=state.cells.get(id); return c.owner===p; });
+  if(!pos) return false;
+  return reachableCellsFrom(pos, p).length>0;
 }
 
-function tallyScores() {
-  const counts = {};
-  state.playersActive.forEach(p => counts[p] = 0);
-
-  for (const id of state.order) {
-    const c = state.cells.get(id);
-    if (!c || c.hole || !c.owner) continue;
-    const base = 1;
-    const bonus = (ISO_DOUBLE && isIsolatedOwnedCell(id)) ? 1 : 0; // 孤立なら 1点ボーナス（=合計2点）
-    counts[c.owner] += (base + bonus);
+// ---- ターン進行・脱落判定 ----
+function advanceTurnSkippingDead(){
+  // 次の生存者で、かつ動ける人に回す。全員チェックで連続脱落あり得る。
+  let safety = 20; // 無限ループ保険
+  while(safety--){
+    if(state.playersActive.length<=1){ endGame(); return; }
+    state.turnIdx = (state.turnIdx + 1) % state.playersActive.length;
+    const p = state.playersActive[state.turnIdx];
+    if(playerHasMove(p)) break;
+    // 動けないなら即脱落
+    eliminatePlayer(p, '行動不能');
+    // turnIdxは今の位置が消えるので、同じインデックスで次の人を見る
+    if(state.playersActive.length<=1){ endGame(); return; }
   }
-  return counts;
-}
-
-function showPaths(id){
-  const ids = reachableCellsFrom(id);
-  for(const cid of ids){ const n = svg.querySelector(`.hex[data-id="${cid}"]`); if(n) n.classList.add('path'); }
-}
-
-function populateSplitOptions(max){
-  function fill(sel){
-    if(!sel) return;
-    sel.innerHTML='';
-    const upper = Math.max(1, max);
-    for(let i=1;i<=upper;i++){ const opt=document.createElement('option'); opt.value=String(i); opt.textContent=String(i); sel.appendChild(opt); }
-  }
-  fill(splitSelect); fill(hudSplit);
-}
-
-function fillLocalSplit(max){
-  localSplit.innerHTML = '';
-  const upper = Math.max(1, max);
-  for(let i=1;i<=upper;i++){
-    const opt = document.createElement('option');
-    opt.value = String(i);
-    opt.textContent = String(i);
-    localSplit.appendChild(opt);
-  }
-  // 既存UIと同期
-  if(splitSelect){ splitSelect.innerHTML = localSplit.innerHTML; splitSelect.value = localSplit.value; }
-  if(hudSplit){    hudSplit.innerHTML    = localSplit.innerHTML; hudSplit.value    = localSplit.value; }
-}
-
-function showSplitPopoverAtCell(cellId){
-  if(!cellId) return hideSplitPopover();
-  const c = state.cells.get(cellId);
-  if(!c) return hideSplitPopover();
-
-  fillLocalSplit(Math.max(1, (c.stack||0)-1));
-
-  // SVG viewBox(0..1000) -> 画面ピクセル → boardWrap基準
-  const {x,y} = axialToPixel(c.q, c.r);
-  const rect = svg.getBoundingClientRect();
-  const px = rect.left + (x/1000) * rect.width;
-  const py = rect.top  + (y/1000) * rect.height;
-
-  const bw = boardWrap.getBoundingClientRect();
-  const lx = px - bw.left;
-  const ly = py - bw.top;
-
-  splitPopover.style.left = `${lx}px`;
-  splitPopover.style.top  = `${ly}px`;
-  splitPopover.style.display = 'flex';
-}
-function hideSplitPopover(){
-  splitPopover.style.display = 'none';
-}
-
-// 画面サイズ変化で再配置
-window.addEventListener('resize', ()=>{
-  if(splitPopover.style.display !== 'none' && state.selected){
-    showSplitPopoverAtCell(state.selected);
-  }
-});
-
-// ポップオーバー変更時は既存セレクタも同期
-localSplit.addEventListener('change', ()=>{
-  if(splitSelect) splitSelect.value = localSplit.value;
-  if(hudSplit)    hudSplit.value    = localSplit.value;
-});
-
-// ---- ターン・終了 ----
-function nextTurn(){
-  state.turnIdx = (state.turnIdx+1) % state.playersActive.length;
   render();
-  hideSplitPopover();
-  if (isEnd()) { endGame(); return; }
   syncBroadcast();
 }
 
-function isEnd(){
-  // 参加者の誰も動かせるスタックが無い
-  return !state.playersActive.some(p=> canPlayerMove(p));
-}
-function canPlayerMove(p){
-  return state.order.some(id=>{ const c=state.cells.get(id); return c && !c.hole && c.owner===p && c.stack>1 && hasMove(c); });
-}
-function hasMove(src){
-  for(const d of DIRS){ let q=src.q, r=src.r; while(true){ q+=d[0]; r+=d[1]; const c=state.cells.get(k(q,r)); if(!c || c.hole) break; if(c.owner){ break; } return true; } }
-  return false;
-}
-
-function resultString(){
-  const counts = tallyScores();
-  const sorted = Object.entries(counts).sort((a,b)=> b[1]-a[1]);
-  const top = sorted[0][1];
-  const winners = sorted.filter(([_,v])=> v===top).map(([k])=>k).join(',');
-  return `終局: ${sorted.map(([p,v])=>`${p} ${v}`).join(' / ')} → 勝者: ${winners}`;
-}
-
-function endGame(){
-  const text = resultString();
-  addLog(text);
-
-  // 自分は即表示
-  showEnd(text);
-
-  // 参加者へ結果を配信（※「閉じる」は同期しない）
-  if (ROOM_ID) {
-    socket.emit('end', { roomId: ROOM_ID, result: text });
+function eliminatePlayer(p, reason='脱落'){
+  // 盤上の駒セルも消して穴化（退場）
+  const pos = state.order.find(id=>{ const c=state.cells.get(id); return c.owner===p; });
+  if(pos){
+    const c = state.cells.get(pos);
+    c.owner = null; c.hole = true;
+    const node = svg.querySelector(`.hex[data-id="${pos}"]`);
+    if(node) node.classList.add('hole');
+  }
+  // 脱落リストへ
+  const idx = state.playersActive.indexOf(p);
+  if(idx!==-1){
+    state.playersActive.splice(idx,1);
+    state.elimOrder.push(p);
+    // ターンポインタ調整（現在インデックスにいた人を削除したので、同インデックスが次の人）
+    if(state.turnIdx>=state.playersActive.length){ state.turnIdx = 0; }
+    addLog(`${p} 脱落（${reason}）`);
   }
 }
 
-// ---- ヒストリ ----
+function endGame(){
+  if(state.playersActive.length===1){
+    const winner = state.playersActive[0];
+    const ranking = [winner, ...state.elimOrder.slice().reverse()]; // 生存順
+    const text = `終局: 🏆 勝者 ${winner} / 生存順: ${ranking.join(' > ')}`;
+    addLog(text);
+    showEnd(text);
+    if (ROOM_ID) socket.emit('end', { roomId: ROOM_ID, result: text });
+  }else{
+    const text = `終局: 全員脱落`;
+    addLog(text);
+    showEnd(text);
+    if (ROOM_ID) socket.emit('end', { roomId: ROOM_ID, result: text });
+  }
+}
+
+// ---- ヒストリ（アンドゥ用） ----
 function pushHistory(){
   const snapshot = {
     turnIdx: state.turnIdx, phase: state.phase, selected: state.selected,
-    left: {...state.left}, playersActive: [...state.playersActive], initStack: state.initStack,
-    cells: [...state.order].map(id=>{ const c=state.cells.get(id); return {id, owner:c.owner, stack:c.stack, hole:c.hole}; }),
+    playersActive: [...state.playersActive], elimOrder: [...state.elimOrder],
+    cells: [...state.order].map(id=>{ const c=state.cells.get(id); return {id, owner:c.owner, hole:c.hole}; }),
+    lastDir: {...state.lastDir},
+    sprintCD: {...state.sprintCD},
   };
   state.history.push(snapshot); if(state.history.length>200) state.history.shift();
 }
 function undo(){
   const s = state.history.pop(); if(!s) return;
-  state.turnIdx=s.turnIdx; state.phase=s.phase; state.selected=s.selected; state.left=s.left;
-  state.playersActive=s.playersActive; state.initStack=s.initStack;
-  for(const info of s.cells){ const c=state.cells.get(info.id); if(!c) continue; c.owner=info.owner; c.stack=info.stack; c.hole=info.hole; }
+  state.turnIdx=s.turnIdx; state.phase=s.phase; state.selected=s.selected;
+  state.playersActive=[...s.playersActive]; state.elimOrder=[...s.elimOrder];
+  state.lastDir = {...s.lastDir};
+  state.sprintCD = {...s.sprintCD};
+  for(const info of s.cells){ const c=state.cells.get(info.id); if(!c) continue; c.owner=info.owner; c.hole=info.hole; }
   addLog('アンドゥ');
+  redrawBoardFromState();
   render();
-  hideSplitPopover();
   syncBroadcast();
 }
 
-function pass(){
-  const turnP = state.playersActive[state.turnIdx];
-  if(state.phase==='place'){ addLog('配置フェイズではパス不可'); return; }
-  if(canPlayerMove(turnP)){ addLog('まだ動けます（パス不可）'); return; }
-  addLog(`${turnP} パス`);
-  hideSplitPopover();
-  nextTurn();
-}
-
-// ---- クリック処理（分割ポップオーバー統合） ----
+// ---- クリック処理 ----
 function onClickCell(id){
   const turnP = state.playersActive[state.turnIdx];
   const cell = state.cells.get(id);
@@ -542,102 +377,108 @@ function onClickCell(id){
   if(state.phase==='place'){
     if(cell.owner){ return; }
     pushHistory();
-    cell.owner = turnP; cell.stack = state.initStack; state.left[turnP]=0;
-    addLog(`${turnP} 初期配置(${state.initStack}) @ ${fmt(cell)}`);
+    cell.owner = turnP;
+    addLog(`${turnP} 初期配置 @ ${fmt(cell)}`);
     if(state.turnIdx < state.playersActive.length-1){ state.turnIdx++; }
-    else { state.turnIdx=0; state.phase='play'; addLog('プレイ開始：分割 → 直線の終端に移動'); }
+    else { state.turnIdx=0; state.phase='play'; addLog('プレイ開始：1〜2マス直線移動／移動元は穴化／行動不能は即脱落'); }
     render();
-    hideSplitPopover();
     syncBroadcast();
     return;
   }
 
   // プレイ中
   if(state.selected===id){
-    state.selected=null; render();
-    hideSplitPopover();
-    return;
+    state.selected=null; render(); return;
   }
 
-  const legals = new Set(legalCells());
-  if(legals.has(id)){
-    state.selected=id; // スタック選択
-    const c=state.cells.get(id);
-    populateSplitOptions(c.stack-1);
-    render();
-    showSplitPopoverAtCell(id); // 近接に表示
-  } else if(state.selected){
-    // 目的地（終端のみ）
-    const reach = new Set(reachableCellsFrom(state.selected));
-    if(reach.has(id)){
-      const src = state.cells.get(state.selected);
+  // 自駒選択
+  const myCellId = state.order.find(cid=>{ const c=state.cells.get(cid); return c.owner===turnP; });
+  if(!myCellId) return;
 
-      // ローカルポップオーバー → HUD → サイド の優先順で取得
-      let moveCount;
-      if(splitPopover.style.display !== 'none'){
-        moveCount = parseInt(localSplit.value, 10);
-      }else if(hudIsActive()){
-        moveCount = parseInt(hudSplit.value, 10);
-      }else{
-        moveCount = parseInt(splitSelect.value, 10);
+  if(id===myCellId){
+    state.selected = id; render(); return;
+  }
+
+  // 目的地
+  if(state.selected){
+    const turnP = state.playersActive[state.turnIdx];
+    const reach = new Set(reachableCellsFrom(state.selected, turnP));
+        if(reach.has(id)){
+      pushHistory();
+      const src = state.cells.get(state.selected);
+      const dst = state.cells.get(id);
+      const turnP = state.playersActive[state.turnIdx];
+
+      // 進行方向 index と歩数(1 or 2) を算出
+      let movedDir = null;
+      let steps = 1;
+      for(let dirIdx=0; dirIdx<DIRS.length; dirIdx++){
+        const d = DIRS[dirIdx];
+        if (dst.q === src.q + d[0] && dst.r === src.r + d[1]) { movedDir = dirIdx; steps = 1; break; }
+        if (dst.q === src.q + 2*d[0] && dst.r === src.r + 2*d[1]) { movedDir = dirIdx; steps = 2; break; }
       }
 
-      if(Number.isNaN(moveCount) || moveCount<1 || moveCount>=src.stack){ return; }
-      pushHistory();
-      src.stack -= moveCount;
-      cell.owner = turnP; cell.stack = (cell.stack||0) + moveCount;
-      addLog(`${turnP} 分割${moveCount}/${src.stack+moveCount} → 移動 @ ${fmt(cell)}`);
+      // 元マスを穴化 → 目的地へ移動
+      src.owner = null;
+      src.hole = true;
+      dst.owner = turnP;
+
+      // 直前方向・ダッシュCDを更新
+      // まず、前回のCDを消費（CD中はこのターン2歩が出てこないため steps=1 のはず）
+      if(state.sprintCD[turnP] > 0) state.sprintCD[turnP] = 0;
+      // 今回2歩なら、次手は1歩縛り（CD付与）
+      if(steps === 2) state.sprintCD[turnP] = 1;
+      // 直前方向を記録（次手の連続方向禁止に使う）
+      state.lastDir[turnP] = movedDir;
+
+      addLog(`${turnP} 移動 ${fmt(src)} → ${fmt(dst)}（${steps}歩${steps===2?'：次手は1歩縛り':''}／同方向連続禁止）`);
+
       state.selected=null;
-      render();
-      hideSplitPopover();
-      nextTurn(); // 内部で syncBroadcast() 実行
+      advanceTurnSkippingDead();
+      return;
     }
   }
 }
 
-// ---- イベント ----
+// ---- 各種イベント ----
 document.getElementById('newBtn').addEventListener('click', ()=>{
   buildBoard();
   setupPlayers(PLAYER_COUNT);
-  resetGame();
+  addLog(`--- New Game --- 初期配置へ`);
+  render();
+  syncBroadcast();
 });
 document.getElementById('regenBtn').addEventListener('click', ()=>{
   buildBoard();
   setupPlayers(PLAYER_COUNT);
-  resetGame();
+  addLog(`--- 地形を再生成しました --- 初期配置へ`);
+  render();
+  syncBroadcast();
 });
 playersSel.addEventListener('change', (e)=>{
   PLAYER_COUNT = clampPlayers(parseInt(e.target.value,10));
   setupPlayers(PLAYER_COUNT);
-  resetGame();
+  render();
+  syncBroadcast();
 });
 radiusSel.addEventListener('change', (e)=>{
   RADIUS = parseInt(e.target.value,10);
-  buildBoard(); setupPlayers(PLAYER_COUNT); resetGame();
+  buildBoard(); setupPlayers(PLAYER_COUNT);
+  render();
+  syncBroadcast();
 });
 document.getElementById('undoBtn').addEventListener('click', undo);
-document.getElementById('passBtn').addEventListener('click', pass);
-document.getElementById('hudUndo').addEventListener('click', undo);
-if (isoDoubleEl) {
-  isoDoubleEl.addEventListener('change', () => {
-    ISO_DOUBLE = isoDoubleEl.checked;
-    addLog(`孤立×2モード: ${ISO_DOUBLE ? 'ON' : 'OFF'}`);
-    syncBroadcast();
-  });
-}
-document.getElementById('hudPass').addEventListener('click', pass);
 holeRange.addEventListener('input', ()=>{
   HOLE_PERC=parseInt(holeRange.value,10); holePercEl.textContent=HOLE_PERC;
 });
 
-// 初期
-buildBoard(); setupPlayers(PLAYER_COUNT); resetGame();
+// 初期セットアップ
+buildBoard(); setupPlayers(PLAYER_COUNT); render(); addLog('初期配置：穴・占有以外ならどこでもOK');
 
 // ==================== オンライン同期（Socket.IO） ====================
 const socket = io();
 let ROOM_ID = null;
 
-// 入室UI
 const roomInput = document.getElementById('roomInput');
 const joinBtn = document.getElementById('joinBtn');
 const roleView = document.getElementById('roleView');
@@ -649,23 +490,22 @@ if (joinBtn) {
     ROOM_ID = id;
     socket.emit('join', { roomId: ROOM_ID });
     roleView.textContent = `入室中: ${ROOM_ID}`;
-    // 自分の現状stateを最初に投げておく（他のクライアントが追従）
-    syncBroadcast();
+    syncBroadcast(); // 現状を送る
   });
 }
 
-// 送受信用シリアライズ
 function serializeState(){
   return {
     turnIdx: state.turnIdx,
     phase: state.phase,
     playersActive: [...state.playersActive],
+    elimOrder: [...state.elimOrder],
     order: [...state.order],
-    initStack: state.initStack,
-    isoDouble: ISO_DOUBLE,
+    lastDir: {...state.lastDir},
+    sprintCD: {...state.sprintCD},
     cells: state.order.map(id=>{
       const c = state.cells.get(id);
-      return { id, q:c.q, r:c.r, hole:c.hole, owner:c.owner, stack:c.stack };
+      return { id, q:c.q, r:c.r, hole:c.hole, owner:c.owner };
     })
   };
 }
@@ -674,22 +514,19 @@ function adoptServerState(s){
   state.turnIdx = s.turnIdx;
   state.phase = s.phase;
   state.playersActive = [...s.playersActive];
+  state.elimOrder = [...s.elimOrder];
   state.order = [...s.order];
-  state.initStack = s.initStack;
-  ISO_DOUBLE = !!s.isoDouble;
-if (isoDoubleEl) isoDoubleEl.checked = ISO_DOUBLE;
+  state.lastDir = {...s.lastDir};
+  state.sprintCD = {...s.sprintCD};
   state.selected = null;
 
   state.cells.clear();
   for(const c of s.cells){
-    state.cells.set(c.id, { q:c.q, r:c.r, id:c.id, hole:c.hole, owner:c.owner, stack:c.stack });
+    state.cells.set(c.id, { q:c.q, r:c.r, id:c.id, hole:c.hole, owner:c.owner });
   }
-
   redrawBoardFromState();
   render();
-  hideSplitPopover();
 }
-
 function redrawBoardFromState(){
   svg.innerHTML = '';
   for(const id of state.order){
@@ -697,81 +534,42 @@ function redrawBoardFromState(){
     const {x,y} = axialToPixel(c.q, c.r);
     const path = hexPath(x,y,26);
     const isDark = ((c.q+c.r)&1)===1;
-    const el = createSVG('path', {
-      d:path,
-      class:`hex ${isDark?'dark':''} ${c.hole?'hole':''}`
-    });
+    const el = createSVG('path', { d:path, class:`hex ${isDark?'dark':''} ${c.hole?'hole':''}` });
     el.dataset.id = id;
     if(!c.hole) el.addEventListener('click', ()=> onClickCell(id));
     svg.appendChild(el);
   }
 }
 
-// サーバからの配信を受け取る
-socket.on('state', ({ state:serverState })=>{
-  adoptServerState(serverState);
-});
+socket.on('state', ({ state:serverState })=>{ adoptServerState(serverState); });
+socket.on('end', ({ result }) => { showEnd(result); });
 
-// サーバから終局結果が届いたら、自分の画面にモーダル表示
-socket.on('end', ({ result }) => {
-  showEnd(result);
-});
-
-// state を部屋に送る
 function syncBroadcast(){
   if(!ROOM_ID) return;
   socket.emit('state', { roomId: ROOM_ID, state: serializeState() });
 }
 
-// ====== End Game Modal 関連 ======
+// ========== End Game Modal ==========
 function showEnd(resultText) {
-  const colorMap = {
-    A: "🟦",
-    B: "🟨",
-    C: "🟩",
-    D: "🟪",
-    E: "🟥",
-    F: "🟫",
-  };
-
-  // "A 20 / B 18 / C 17" → 配列に
-  const parts = resultText.replace("終局: ", "").split("→ 勝者:");
-  const stats = parts[0].split("/").map(s => s.trim()); // ["A 20", "B 18", "C 17"]
-  const winner = parts[1].trim();                        // "A" など
-
-  // 行を色とセットで整形
-  const lines = stats.map(line => {
-    const [p, num] = line.split(" ");
-    return `${colorMap[p] || ""} ${p}  ${num}枚`;
-  });
-
-  const winnerMark = winner.split(",").map(p => `${colorMap[p]} ${p}`).join(" & ");
-
-  const formatted =
-`ゲーム終了
-
-${lines.join("\n")}
-
-🏆 勝者：${winnerMark}`;
-
+  const colorMap = {A:"🟦",B:"🟨",C:"🟩",D:"🟪",E:"🟥",F:"🟫"};
   const modal = document.getElementById("endModal");
   const pre = document.getElementById("endResult");
-  if (pre) pre.textContent = formatted;
+  if (pre) {
+    const survivors = state.playersActive.join(" ");
+    const elim = state.elimOrder.join(" → ");
+    const hero = state.playersActive.length===1 ? `${colorMap[state.playersActive[0]]||''} ${state.playersActive[0]}` : '—';
+    pre.textContent = `${resultText}\n\n【サマリ】\n生存: ${survivors||'なし'}\n脱落順: ${elim||'なし'}\n勝者: ${hero}`;
+  }
   if (modal) modal.style.display = "flex";
 }
-
 function hideEnd() {
   const modal = document.getElementById("endModal");
   if (modal) modal.style.display = "none";
 }
-
-// ====== ここまで ======
 </script>
 
-<!-- ====== End Game Modal ====== -->
-<div id="endModal" style="
-  position:fixed; inset:0; background:rgba(0,0,0,.75);
-  display:none; align-items:center; justify-content:center; z-index:100;">
+<!-- End Game Modal -->
+<div id="endModal" style="position:fixed; inset:0; background:rgba(0,0,0,.75); display:none; align-items:center; justify-content:center; z-index:100;">
   <div style="background:#111827; padding:24px; border-radius:14px; max-width:90%; text-align:center;">
     <h2 style="margin:0 0 12px; font-size:22px;">ゲーム終了</h2>
     <pre id="endResult" style="white-space:pre-wrap; margin-bottom:18px; font-size:16px;"></pre>
